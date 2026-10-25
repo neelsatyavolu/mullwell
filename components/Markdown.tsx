@@ -24,8 +24,10 @@ export function Markdown({ text, onCite, compact }: { text: string; onCite?: (se
             const cite = /^#cite-(\d+)$/.exec(href ?? "");
             if (cite) {
               const n = Number(cite[1]);
+              // Without a handler the chip is only a label, not a dead button.
+              if (!onCite) return <span className="cite">§{n}</span>;
               return (
-                <button type="button" className="cite" onClick={() => onCite?.(n)} aria-label={`Source section ${n}`}>
+                <button type="button" className="cite" onClick={() => onCite(n)} aria-label={`Source section ${n}`}>
                   §{n}
                 </button>
               );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Rating } from "ts-fsrs";
-import { daysUntil, missedConcepts, perDay, pickPracticeTest, readiness, reviewPlan, type ExamItem } from "./exam";
+import { daysUntil, missedConcepts, perDay, pickPracticeTest, readinessAt, reviewPlan, type ExamItem } from "./exam";
 import { newCard, review } from "./schedule";
 import type { Attempt } from "./types";
 
@@ -9,11 +9,24 @@ const item = (id: string, setId = "s1", concept = id): ExamItem => ({
 });
 const at = (itemId: string, verdict: Attempt["verdict"], when = 1): Attempt => ({ itemId, setId: "s1", at: when, verdict, confidence: "sure" });
 
-describe("readiness", () => {
-  it("counts recalled, shaky and untried from the latest attempt", () => {
-    const items = [item("a"), item("b"), item("c")];
-    const r = readiness(items, [at("a", "wrong", 1), at("a", "right", 2), at("b", "partly")]);
-    expect(r).toEqual({ total: 3, recalled: 1, shaky: 1, untried: 1 });
+describe("readinessAt", () => {
+  const DAY = 86_400_000;
+  const now = Date.UTC(2026, 9, 1);
+
+  it("counts a card that will have faded by test day as shaky", () => {
+    const testAt = now + 120 * DAY;
+    const cards = new Map([["a", review(newCard(now), Rating.Hard, now)]]);
+    expect(readinessAt([item("a")], cards, testAt)).toEqual({ total: 1, recalled: 0, shaky: 1, untried: 0 });
+  });
+
+  it("counts a fresh Easy card as recalled and a missing card as untried", () => {
+    const cards = new Map([["a", review(newCard(now), Rating.Easy, now)]]);
+    expect(readinessAt([item("a"), item("b")], cards, now + DAY)).toEqual({ total: 2, recalled: 1, shaky: 0, untried: 1 });
+  });
+
+  it("counts a miss the evening before the test as at risk, not recalled", () => {
+    const cards = new Map([["a", review(newCard(now), Rating.Again, now)]]);
+    expect(readinessAt([item("a")], cards, now + 13 * 3_600_000)).toEqual({ total: 1, recalled: 0, shaky: 1, untried: 0 });
   });
 });
 

@@ -23,8 +23,8 @@ Paper and tea. One accent (matcha green) for primary actions and progress. Amber
 | `--surface-2` | `#EFEADF` | `#2A2824` | Insets, hover, inputs |
 | `--line` | `#E3DCCD` | `#36332E` | Borders, dividers |
 | `--ink` | `#25231F` | `#ECE7DE` | Body text |
-| `--ink-2` | `#5F5A51` | `#B4AEA3` | Secondary text |
-| `--ink-3` | `#8C867B` | `#857F75` | Hints, metadata |
+| `--ink-2` | `#5F5A51` | `#B4AEA3` | Secondary text, labels, small metadata |
+| `--ink-3` | `#8C867B` | `#857F75` | Hints at 16px and up, decorative text |
 | `--accent` | `#3D7A57` | `#7DBE97` | Primary buttons, focus, progress |
 | `--accent-ink` | `#FFFFFF` | `#10241A` | Text on accent |
 | `--accent-soft` | `#E1EDE4` | `#1F3328` | Selected states, source highlight |
@@ -46,7 +46,7 @@ Paper and tea. One accent (matcha green) for primary actions and progress. Amber
 | sand | `#A88B4A` | `#D6BD82` |
 | slate | `#5F6B78` | `#A3AFBC` |
 
-Rules: text on `--bg` and `--surface` meets WCAG AA. Never put information in color alone; correct/incorrect always carries a word ("Right", "Not quite") and an icon.
+Rules: text on `--bg` and `--surface` meets WCAG AA (`lib/contrast.test.ts` checks it in both themes). `--ink-3` is only about 3.3:1 on `--bg`, so labels, eyebrows and 14px metadata use `--ink-2`. Text on `--accent-soft` (accent chips, citation chips) is the accent mixed 80% with `--ink`, weight 600. Never put information in color alone; correct/incorrect always carries a word ("Right", "Not quite") and an icon.
 
 ## Type
 
@@ -82,11 +82,13 @@ Reading text is capped at 76ch. Use tabular figures for counts and timers.
 
 - **Button.** Primary: accent fill, 40px tall, 16px padding. Secondary: surface fill with line border. Ghost: text only, for tertiary actions. Visible 2px accent focus ring offset 2px.
 - **Card.** Surface, line border, 14px radius, 20–24px padding.
-- **Question card.** The question in Literata 20px. Answer box under it, then the confidence row, then Check. After checking, a verdict strip (Right / Partly / Not quite) followed by the source quote.
-- **Source quote.** Literata, `--surface-2` background, 3px accent left rule, with the section label ("§3 · Cell respiration") in small ink-3 text above it.
-- **Citation chip.** Small pill `§3`, `--accent-soft` background; clicking scrolls to and briefly highlights that passage in the Source tab.
+- **Question card.** The question in Literata 20px. Answer box under it, then the confidence row, then Check. After checking, a verdict strip (Right / Partly / Not quite) followed by the source quote. The strip's text is `--ink`; its tone color sits only on the icon and a 3px left rule.
+- **Source quote.** Literata, `--surface-2` background, 3px accent left rule, with the section label ("§3 · Cell respiration") in small ink-2 text above it.
+- **Citation chip.** Small pill `§3`, `--accent-soft` background, text as for accent chips; clicking scrolls to and briefly highlights that passage in the Source tab.
 - **Confidence pills.** Three pills: Guessing, Unsure, Sure. Single select, required before Check on free-response questions.
-- **Rating row (review).** Again, Hard, Good, Easy with the next interval under each in ink-3.
+- **Rating row (review).** Again, Hard, Good, Easy with the next interval under each in quieter small text that still meets AA.
+- **Flashcard.** Tap the card or press Show answer (Space); the answer arrives in place. After a rating, a ghost "Undo last rating" (Z) stays until the next one. The Cards tab has a Due / All cards switch: All cards flips through with Previous and Next and saves nothing.
+- **Fixing a question.** After a check, quiet ghost buttons sit left of Next: "I was right" on a miss, Edit answer (short and fill-the-blank only) and Report. A reported question leaves practice and review with an inline "Removed from practice." and Undo; the Cards tab lists them under Reported.
 - **Progress.** A thin 4px bar in accent on `--surface-2`, plus a plain count ("3 of 6").
 - **Empty states.** One sentence, one action. No illustrations needed.
 
@@ -109,9 +111,10 @@ Label what the app knows: "From your notes" vs "From the web". If a question fai
 Mullwell is organized the way school is: **classes** hold **study sets** (a lecture, a chapter, a topic) and **tests**.
 
 - Top bar: wordmark left; Today, Review (with due count) and Settings right. Nothing else.
-- Today (home): a greeting, then "Up next" (reviews due, the nearest tests with a day count), the add-material card, and the class grid.
-- Class: its tests first (nearest date first), then its sets, then the add-material card already filed to this class.
+- Today (home): a greeting, then "Up next" (today's session as one card with a Start button: due reviews, a few new questions and each test's plan, with a time estimate; a Continue lesson card; the nearest tests with a day count), the add-material card, and the class grid. Set rows carry a thin readiness bar (recalled / at risk / not tried) and one meta line: lesson step, else due count, else question count. Class cards show a due chip.
+- Class: its tests first (upcoming nearest first, then past tests under "Past", most recent first), then its sets, then the add-material card already filed to this class.
 - Study set: title, then tabs: **Learn** (default until the lesson is done), Practice, Notes, Cards, Tutor, Source, More. More holds Audio recap and Concept map, generated only when asked.
-- Learn: no sidebar. A step bar across the top (numbered marks joined by a line; done steps filled green, review amber, current ringed). Each step is a sequence of screens moved by buttons: an intro (number, title, goal), then the explanation as **beats**, one card at a time with Back / Continue and progress dots, then the checkpoint on its own screen. A miss brings a short re-explanation, then a new checkpoint. Content column 760px.
+- Learn: no sidebar. The arrow keys (and Enter) move between beats, and the screen survives a refresh. A step bar across the top (numbered marks joined by a line; done steps filled green, review amber, current ringed). Each step is a sequence of screens moved by buttons: an intro (number, title, goal), then the explanation as **beats**, one card at a time with Back / Continue and progress dots, then the checkpoint on its own screen. A miss brings a short re-explanation, then a new checkpoint. Content column 760px.
 - Beats: one idea, at most 60 words, labelled with an icon: Big idea (larger serif text, green left rule), How it works (numbered lists render as a timeline), Example (inset panel), Picture it, Diagram (Mermaid in the theme colors), Watch out and What went wrong (amber), Recap. Key terms are bold and take the beat's tone color.
 - Test: day count, a readiness strip (recalled / shaky / not tried, as counts), "Study today" (the review plan for today), and Practice test. Results list missed concepts with links back to their sets.
+- Practice test: a strip under the top bar with "7 of 10 answered", a progress bar, an elapsed timer and a numbered chip per question (filled once answered). Optional Guessing / Unsure / Sure pills on each question. Answers are kept in the tab, so a refresh or Quit offers "Resume your test". Grading shows "Grading 4 of 10…" and each verdict as it arrives. Results group misses by set, with "Study what you missed" as the one next step; past runs open to show the same list.

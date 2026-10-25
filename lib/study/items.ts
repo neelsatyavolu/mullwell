@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { locateQuote } from "./quote";
-import type { Item, Section } from "./types";
+import type { Item, ReportReason, Section } from "./types";
 
 // Turns the model's raw question objects into Items, keeping only questions
 // whose supporting quote really is in the material, then applies the answer
@@ -61,4 +61,22 @@ export function passesCheck(item: Item, value: unknown): boolean {
 export function isDuplicate(prompt: string, existing: Item[]): boolean {
   const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return existing.some((i) => key(i.prompt) === key(prompt));
+}
+
+/** Takes a reported question out of practice and review, noting why. */
+export function suspend(item: Item, reason: ReportReason, at: number): Item {
+  return { ...item, status: "suspended", report: { reason, at } };
+}
+
+/** Puts a suspended question back. */
+export function unsuspend(item: Item): Item {
+  const rest = Object.fromEntries(Object.entries(item).filter(([key]) => key !== "report")) as Omit<Item, "report">;
+  return { ...rest, status: "ok" };
+}
+
+/** The student's own answer key for a short or fill-the-blank question. The prompt and quote stay, so it stays grounded. */
+export function editAnswer(item: Item, answer: string): Item {
+  const text = answer.trim();
+  if (item.kind === "mcq" || !text) return item;
+  return { ...item, answer: text, edited: true };
 }

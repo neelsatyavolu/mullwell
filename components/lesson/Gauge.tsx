@@ -1,19 +1,26 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Rating } from "ts-fsrs";
 import { Icon } from "../Icon";
-import { gradeResponse, VerdictStrip } from "../QuestionCard";
+import { gradeResponse, VerdictStrip, type Graded } from "../QuestionCard";
+import { attemptCounts } from "@/lib/client/derived";
 import { saveStep } from "@/lib/client/jobs";
-import { recordAnswer, updateSet } from "@/lib/client/store";
+import { clearSession, gaugeKey, readSession, writeSession } from "@/lib/client/session";
+import { getLibrary, recordAnswer, updateSet } from "@/lib/client/store";
 import { familiarityFrom } from "@/lib/study/lesson";
+import { gaugeSaveIndex, restoreGaugeIndex } from "@/lib/study/position";
+import { choiceOrder, seedFor } from "@/lib/study/shuffle";
 import type { Item, Lesson, StudySet, Verdict } from "@/lib/study/types";
 
 // Before teaching: one quick question per step to find out what the student
-// already knows. "I don't know yet" is a first-class answer.
+// already knows. "I don't know yet" is a first-class answer. The question
+// reached is kept in this tab, so a refresh picks up there.
 
 const LETTERS = "ABCDEF";
 
 /** Ends the gauge: unanswered steps count as new, and teaching starts at the first step. */
 export function finishGauge(set: StudySet, lesson: Lesson) {
+  clearSession(gaugeKey(set.id));
   updateSet(set.id, (s) => ({
     ...s,
     lesson: { ...lesson, phase: "learn", current: 0, steps: (s.lesson ?? lesson).steps.map((st) => ({ ...st, familiarity: st.familiarity ?? "new" })) },
@@ -24,13 +31,26 @@ export function Gauge({ set, lesson }: { set: StudySet; lesson: Lesson }) {
   const probes = lesson.steps
     .map((step) => ({ step, item: set.items.find((i) => i.id === step.probeId) }))
     .filter((p): p is { step: typeof p.step; item: Item } => Boolean(p.item) && p.item!.status !== "dropped");
-  const [started, setStarted] = useState(false);
-  const [index, setIndex] = useState(0);
+  // Shuffled choice order per probe (`order[displayPosition]` is the stored index), fixed for this sitting.
+  const [orders] = useState(() => {
+    const counts = attemptCounts(getLibrary());
+    return new Map(probes.map(({ item }) => [item.id, choiceOrder(item, seedFor(item.id, counts.get(item.id) ?? 0))]));
+  });
+  const [saved] = useState(() => restoreGaugeIndex(readSession(gaugeKey(set.id)), probes.length));
+  const [started, setStarted] = useState(saved !== null);
+  const [index, setIndex] = useState(saved ?? 0);
   const [choice, setChoice] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [guessing, setGuessing] = useState(false);
   const [result, setResult] = useState<Verdict | "unknown" | null>(null);
+  // "unknown" because the grader couldn't be reached, not because the student said so.
+  const [graderFailed, setGraderFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const settled = result !== null;
+  useEffect(() => {
+    if (started) writeSession(gaugeKey(set.id), { index: gaugeSaveIndex(index, settled, probes.length) });
+  }, [set.id, started, index, settled, probes.length]);
 
   if (!probes.length) {
     return (
@@ -72,19 +92,40 @@ export function Gauge({ set, lesson }: { set: StudySet; lesson: Lesson }) {
   const { step, item } = probes[index];
   const answered = item.kind === "mcq" ? choice !== null : text.trim().length > 0;
   const last = index === probes.length - 1;
+  const order = orders.get(item.id) ?? item.choices?.map((_, i) => i) ?? [];
 
   function settle(verdict: Verdict | "unknown") {
     setResult(verdict);
     saveStep(set.id, step.id, (st) => ({ ...st, familiarity: familiarityFrom(verdict, guessing ? "guess" : "sure") }));
-    if (verdict !== "unknown") recordAnswer(set.id, item.id, verdict, guessing ? "guess" : "sure");
+  }
+
+  /** "I don't know yet" is logged as a miss, so the question comes back soon. */
+  function dontKnow() {
+    if (busy) return;
+    settle("unknown");
+    recordAnswer(set.id, item.id, "wrong", "guess", { mode: "gauge", source: "self" });
   }
 
   async function check() {
     if (!answered || busy) return;
     setBusy(true);
-    const graded = await gradeResponse(item, item.kind === "mcq" ? (choice as number) : text).catch(() => null);
+    const graded: Graded | null = await gradeResponse(item, item.kind === "mcq" ? (choice as number) : text).catch(() => null);
     setBusy(false);
-    settle(graded?.verdict ?? "unknown");
+    // Nothing is logged when the grader fails: the lesson teaches the step either way.
+    if (!graded) {
+      setGraderFailed(true);
+      return settle("unknown");
+    }
+    settle(graded.verdict);
+    // A pretest answer is a single data point, so it never schedules the card as Easy.
+    recordAnswer(set.id, item.id, graded.verdict, guessing ? "guess" : "sure", {
+      mode: "gauge",
+      cap: Rating.Good,
+      response: item.kind === "mcq" ? item.choices?.[choice ?? -1] : text.trim(),
+      feedback: graded.feedback,
+      missing: graded.missing,
+      source: graded.source,
+    });
   }
 
   function next() {
@@ -94,6 +135,7 @@ export function Gauge({ set, lesson }: { set: StudySet; lesson: Lesson }) {
     setText("");
     setGuessing(false);
     setResult(null);
+    setGraderFailed(false);
   }
 
   return (
@@ -108,11 +150,11 @@ export function Gauge({ set, lesson }: { set: StudySet; lesson: Lesson }) {
         <h2 className="question">{item.prompt}</h2>
         {item.kind === "mcq" ? (
           <div className="choices">
-            {item.choices?.map((c, i) => {
+            {order.map((i, pos) => {
               const state = result && result !== "unknown" ? (i === item.correct ? " is-right" : i === choice ? " is-wrong" : "") : "";
               return (
                 <button key={i} type="button" className={`choice${state}`} aria-pressed={choice === i} disabled={result !== null} onClick={() => setChoice(i)}>
-                  <span className="choice-key">{LETTERS[i]}</span><span>{c}</span>
+                  <span className="choice-key">{LETTERS[pos]}</span><span>{item.choices?.[i]}</span>
                 </button>
               );
             })}
@@ -124,7 +166,7 @@ export function Gauge({ set, lesson }: { set: StudySet; lesson: Lesson }) {
           <div className="spread">
             <button type="button" className="pill" aria-pressed={guessing} onClick={() => setGuessing((g) => !g)}>I&apos;m guessing</button>
             <div className="row">
-              <button className="btn btn-ghost" onClick={() => settle("unknown")}>I don&apos;t know yet</button>
+              <button className="btn btn-ghost" disabled={busy} onClick={dontKnow}>I don&apos;t know yet</button>
               <button className="btn btn-primary" disabled={!answered || busy || item.status === "checking"} onClick={() => void check()}>
                 {busy ? "Checking…" : item.status === "checking" ? "Checking answer key…" : "Check"}
               </button>
@@ -133,7 +175,7 @@ export function Gauge({ set, lesson }: { set: StudySet; lesson: Lesson }) {
         ) : (
           <div className="stack">
             {result === "unknown" ? (
-              <p className="muted">No problem. This is what the lesson is for.</p>
+              <p className="muted">{graderFailed ? "Couldn't check that one, so we'll teach it anyway." : "No problem. This is what the lesson is for."}</p>
             ) : (
               <VerdictStrip verdict={result}>
                 <p>{result === "right" ? (guessing ? "Right, though you were guessing, so we'll go over it." : "You know this one. We'll keep it to a quick recap.") : `The answer is “${item.answer}”. We'll cover it.`}</p>

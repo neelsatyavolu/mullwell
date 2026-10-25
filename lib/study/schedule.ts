@@ -20,12 +20,25 @@ function fromStored(card: StoredCard): Card {
   return { ...card, due: new Date(card.due), last_review: card.last_review ? new Date(card.last_review) : undefined };
 }
 
-/** A right answer you were only guessing at is not yet learned; a confident miss needs to come back soon. */
-export function gradeFor(verdict: Verdict, confidence: Confidence): Grade {
+/**
+ * A right answer you were only guessing at is not yet learned; a confident miss
+ * needs to come back soon. `cap` limits the grade (a pretest never seeds Easy).
+ */
+export function gradeFor(verdict: Verdict, confidence: Confidence, opts: { cap?: Grade } = {}): Grade {
+  return Math.min(baseGrade(verdict, confidence), opts.cap ?? Rating.Easy) as Grade;
+}
+
+function baseGrade(verdict: Verdict, confidence: Confidence): Grade {
   if (verdict === "wrong") return Rating.Again;
   if (verdict === "partly") return Rating.Hard;
   if (confidence === "guess") return Rating.Hard;
   return confidence === "sure" ? Rating.Easy : Rating.Good;
+}
+
+/** The verdict a Review self-rating stands for, so Review counts as an attempt. */
+export function ratingToVerdict(grade: Grade): Verdict {
+  if (grade === Rating.Again) return "wrong";
+  return grade === Rating.Hard ? "partly" : "right";
 }
 
 export function review(card: StoredCard, grade: Grade, now = Date.now()): StoredCard {
@@ -58,6 +71,9 @@ export const isDue = (card: StoredCard, now = Date.now()) => card.due <= now;
 
 /** Chance the student still recalls this card at `at` (0 to 1). A card never studied counts as 0. */
 export function recallAt(card: StoredCard | undefined, at: number): number {
-  if (!card || card.reps === 0) return 0;
-  return scheduler.get_retrievability(fromStored(card), new Date(at), false);
+  if (!card || card.reps === 0 || card.last_review === null) return 0;
+  // Fractional days: ts-fsrs rounds elapsed time down to whole days, which would
+  // call a miss from last night "certain" for a morning test.
+  const days = Math.max(0, (at - card.last_review) / 86_400_000);
+  return scheduler.forgetting_curve(days, card.stability);
 }

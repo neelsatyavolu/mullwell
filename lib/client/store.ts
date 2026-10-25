@@ -2,10 +2,11 @@
 import { hardNavigate } from "@/lib/client/navigate";
 import { useSyncExternalStore } from "react";
 import { clearLegacyLibrary, emptyLibrary, KINDS, loadLibrary, put, readLegacyLibrary, readMeta, remove, replaceAll, setAccountScope, writeMeta, type Kind, type Library } from "./db";
-import { gradeFor, newCard, review, type StoredCard } from "@/lib/study/schedule";
+import { Rating, type Grade } from "ts-fsrs";
+import { gradeFor, newCard, ratingToVerdict, review, type StoredCard } from "@/lib/study/schedule";
 import { newId } from "@/lib/study/ids";
 import { acknowledge, changeKey, enqueue, remoteWins, toBatches, type SyncChange } from "@/lib/study/sync";
-import type { Attempt, Confidence, Course, Exam, ExamRun, Item, StudySet, Verdict } from "@/lib/study/types";
+import type { Attempt, AttemptMode, AttemptSource, Confidence, Course, Exam, ExamRun, Item, StudySet, Verdict } from "@/lib/study/types";
 
 // One in-memory copy of the signed-in account's library. Every change is
 // written to IndexedDB (instant, offline) and queued for the server (synced
@@ -119,6 +120,11 @@ function setSyncState(state: SyncState) {
 }
 export const getSyncState = () => syncState;
 
+/** Whether local changes have reached the server: "pending" while saving, "offline" when the last sync failed. */
+export function useSyncState(): SyncState {
+  return useSyncExternalStore(subscribe, getSyncState, () => "synced");
+}
+
 function queue(kind: Kind, id: string, data: unknown | null) {
   outbox = enqueue(outbox, { kind, id, data, updatedAt: Date.now() });
   void writeMeta("outbox", [...outbox.values()]).catch(() => {});
@@ -175,6 +181,7 @@ function startSyncTimers() {
   setInterval(() => document.visibilityState === "visible" && void syncNow(), PULL_EVERY_MS);
   window.addEventListener("focus", () => void syncNow());
   window.addEventListener("online", () => void syncNow());
+  window.addEventListener("offline", () => setSyncState("offline"));
 }
 
 /** A change from the server: stored locally, not sent back. */
@@ -262,7 +269,8 @@ function itemIdsOf(setIds: string[]) {
 export function deleteSet(id: string) {
   const items = itemIdsOf([id]);
   drop("cards", items);
-  drop("attempts", Object.values(library.attempts).filter((a) => a.setId === id).map((a) => `${a.itemId}:${a.at}`));
+  // By stored key: older attempts are keyed `${itemId}:${at}`, newer ones by a random id.
+  drop("attempts", Object.entries(library.attempts).filter(([, a]) => a.setId === id).map(([key]) => key));
   drop("sets", [id]);
   for (const exam of Object.values(library.exams)) if (exam.setIds.includes(id)) saveExam({ ...exam, setIds: exam.setIds.filter((s) => s !== id) });
 }
@@ -279,14 +287,53 @@ export function deleteCourse(id: string) {
   drop("courses", [id]);
 }
 
-/** Records an answer and reschedules the question's card. */
-export function recordAnswer(setId: string, itemId: string, verdict: Verdict, confidence: Confidence, now = Date.now()) {
-  const attempt: Attempt = { itemId, setId, at: now, verdict, confidence };
-  write("attempts", `${itemId}:${now}`, attempt);
-  rateCard(itemId, gradeFor(verdict, confidence), now);
+/** Longest answer text kept on an attempt or a practice test result. */
+export const MAX_RESPONSE = 1000;
+
+export type AnswerDetails = {
+  mode?: AttemptMode;
+  response?: string;
+  feedback?: string;
+  missing?: string;
+  source?: AttemptSource;
+  /** Highest grade this answer may give the card. */
+  cap?: Grade;
+};
+
+/** Records an answer and reschedules the question's card. An explain-back is logged but doesn't reschedule. Returns the attempt's key. */
+export function recordAnswer(setId: string, itemId: string, verdict: Verdict, confidence: Confidence, extra: AnswerDetails = {}, now = Date.now()): string {
+  const { cap, response, ...details } = extra;
+  // Only the fields that are set, so records stay as small as the old ones.
+  const optional = Object.fromEntries(Object.entries({ ...details, response: response?.slice(0, MAX_RESPONSE) }).filter(([, v]) => v !== undefined && v !== ""));
+  const key = newId("a");
+  write("attempts", key, { itemId, setId, at: now, verdict, confidence, ...optional } satisfies Attempt);
+  if (extra.mode !== "explain") rateCard(itemId, gradeFor(verdict, confidence, { cap }), now);
+  return key;
 }
 
-export function rateCard(itemId: string, grade: Parameters<typeof review>[1], now = Date.now()) {
+/** A Review self-rating: logged as an attempt (so it counts toward readiness) and applied to the card. Returns the attempt's key. */
+export function recordReview(setId: string, itemId: string, grade: Grade, now = Date.now()): string {
+  const attempt: Attempt = { itemId, setId, at: now, verdict: ratingToVerdict(grade), confidence: grade === Rating.Easy ? "sure" : "unsure", mode: "review", source: "self" };
+  const key = newId("a");
+  write("attempts", key, attempt);
+  rateCard(itemId, grade, now);
+  return key;
+}
+
+/** Undoes one grade: the card goes back to how it was (or away, if it had none) and that attempt is dropped. */
+export function restoreReview(itemId: string, prevCard: StoredCard | null, attemptKey: string) {
+  drop("attempts", [attemptKey]);
+  if (prevCard) write("cards", itemId, prevCard);
+  else drop("cards", [itemId]);
+}
+
+/** "I was right": replaces a graded answer with one the student marked right. Returns the new attempt's key. */
+export function overrideAnswer(setId: string, itemId: string, prevCard: StoredCard | null, attemptKey: string, confidence: Confidence, extra: Omit<AnswerDetails, "source" | "feedback" | "missing"> = {}, now = Date.now()): string {
+  restoreReview(itemId, prevCard, attemptKey);
+  return recordAnswer(setId, itemId, "right", confidence, { ...extra, source: "self" }, now);
+}
+
+function rateCard(itemId: string, grade: Grade, now = Date.now()) {
   const card: StoredCard = library.cards[itemId] ?? newCard(now);
   write("cards", itemId, review(card, grade, now));
 }

@@ -1,9 +1,10 @@
 "use client";
 import { hardNavigate } from "@/lib/client/navigate";
 import { useRef, useState } from "react";
-import { usePrefs, writePrefs, type Prefs, type Provider } from "@/lib/client/ai";
+import { readPrefs, STUDY_DEFAULTS, STUDY_MAX, studyLimit, usePrefs, writePrefs, type Prefs, type Provider } from "@/lib/client/ai";
 import { refreshStatus, useAiStatus } from "@/lib/client/status";
-import { getAccount, getLibrary, importLibrary, useLibrary } from "@/lib/client/store";
+import { confirmDialog } from "@/components/Dialog";
+import { getAccount, getLibrary, importLibrary, useLibrary, useSyncState, type SyncState } from "@/lib/client/store";
 import { emptyLibrary, type Library } from "@/lib/client/db";
 import { makeBackup, readBackup } from "@/lib/study/backup";
 
@@ -99,9 +100,16 @@ function ProviderCard({ provider, connected, prefs, setPrefs, models }: { provid
   );
 }
 
+const SYNC_TEXT: Record<SyncState, string> = {
+  synced: "All changes synced",
+  pending: "Saving changes…",
+  offline: "Offline. Changes are kept on this device and sync when you're back.",
+};
+
 function AccountSection() {
   useLibrary();
   const account = getAccount();
+  const sync = useSyncState();
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [password, setPassword] = useState("");
@@ -151,6 +159,10 @@ function AccountSection() {
           </div>
           <button className="btn btn-sm" disabled={busy} onClick={() => void signOut()}>Sign out</button>
         </div>
+        <p className="meta row" style={{ gap: 8 }}>
+          <span className="dot" style={{ background: sync === "synced" ? "var(--good)" : "var(--warn)" }} aria-hidden />
+          {SYNC_TEXT[sync]}
+        </p>
         <div className="row">
           <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void signOutEverywhere()}>Sign out other devices</button>
           {!deleting && <button className="btn btn-sm btn-ghost btn-danger" onClick={() => setDeleting(true)}>Delete account</button>}
@@ -172,13 +184,59 @@ function AccountSection() {
   );
 }
 
+/** A number box that saves each valid value as it's typed and shows the saved one again on blur. */
+function StudyField({ label, value, min, onSave }: { label: string; value: number; min: number; onSave: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <label className="field" style={{ flex: "1 1 200px" }}>
+      <span>{label}</span>
+      <input
+        className="input num"
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={STUDY_MAX}
+        step={1}
+        value={draft ?? String(value)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const n = e.target.value.trim() === "" ? undefined : studyLimit(Number(e.target.value), min);
+          if (n !== undefined) onSave(n);
+        }}
+        onBlur={() => setDraft(null)}
+      />
+    </label>
+  );
+}
+
+function StudySection() {
+  const prefs = usePrefs();
+  const save = (patch: Partial<Prefs>) => writePrefs({ ...readPrefs(), ...patch });
+  return (
+    <section className="stack">
+      <div className="stack" style={{ gap: 4 }}>
+        <p className="label">Study</p>
+        <p className="small muted">How much goes into Today&apos;s session. When more is due than fits, reviews come first.</p>
+      </div>
+      <div className="card row" style={{ alignItems: "flex-end", gap: 16 }}>
+        <StudyField label="New questions per day" value={prefs.studyNewPerDay ?? STUDY_DEFAULTS.newPerDay} min={0} onSave={(n) => save({ studyNewPerDay: n })} />
+        <StudyField label="Most cards in one session" value={prefs.studyCap ?? STUDY_DEFAULTS.cap} min={1} onSave={(n) => save({ studyCap: n })} />
+      </div>
+    </section>
+  );
+}
+
 export default function Settings() {
   const { status } = useAiStatus();
   const prefs = usePrefs();
   const [message, setMessage] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const setPrefs = (p: Prefs) => writePrefs(p);
+  // Provider changes replace the AI fields only; the study fields stay.
+  const setPrefs = (p: Prefs) => {
+    const { studyNewPerDay, studyCap } = readPrefs();
+    writePrefs({ ...p, studyNewPerDay, studyCap });
+  };
 
   function exportBackup() {
     const blob = new Blob([JSON.stringify(makeBackup(getLibrary() as unknown as Parameters<typeof makeBackup>[0]))], { type: "application/json" });
@@ -192,7 +250,13 @@ export default function Settings() {
   async function restore(file: File) {
     const parsed = readBackup(await file.text());
     if (!parsed.ok) return setMessage(parsed.error);
-    if (!confirm("Replace everything in this browser with the backup?")) return;
+    const ok = await confirmDialog({
+      title: "Restore this backup?",
+      body: "Everything in your account is replaced with the backup, on every device. This can't be undone.",
+      confirmLabel: "Replace everything",
+      danger: true,
+    });
+    if (!ok) return;
     await importLibrary({ ...emptyLibrary(), ...(parsed.backup.data as unknown as Library) });
     setMessage("Backup restored.");
   }
@@ -210,10 +274,11 @@ export default function Settings() {
           <ProviderCard key={p} provider={p} connected={Boolean(status?.connected[p])} prefs={prefs} setPrefs={setPrefs} models={status?.models[p] ?? []} />
         ))}
       </section>
+      <StudySection />
       <section className="stack">
         <div className="stack" style={{ gap: 4 }}>
           <p className="label">Your data</p>
-          <p className="small muted">Your classes, sets and review history are saved to your account and sync across devices. A copy stays in this browser so it opens fast and works offline. You can also download a backup file.</p>
+          <p className="small muted">Your classes, sets and review history are saved to your account and sync across devices. A copy stays in this browser so it opens fast and keeps working if your connection drops. You can also download a backup file.</p>
         </div>
         <div className="row">
           <button className="btn" onClick={exportBackup}>Download backup</button>

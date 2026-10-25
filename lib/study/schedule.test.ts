@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Rating } from "ts-fsrs";
-import { formatInterval, gradeFor, isDue, newCard, previewIntervals, review } from "./schedule";
+import { formatInterval, gradeFor, isDue, newCard, previewIntervals, ratingToVerdict, review } from "./schedule";
 
 const DAY = 86_400_000;
 
@@ -12,6 +12,20 @@ describe("gradeFor", () => {
     expect(gradeFor("right", "unsure")).toBe(Rating.Good);
     expect(gradeFor("right", "sure")).toBe(Rating.Easy);
   });
+
+  it("never grades above a cap, so a pretest can't seed Easy", () => {
+    expect(gradeFor("right", "sure", { cap: Rating.Good })).toBe(Rating.Good);
+    expect(gradeFor("right", "unsure", { cap: Rating.Good })).toBe(Rating.Good);
+    expect(gradeFor("wrong", "sure", { cap: Rating.Good })).toBe(Rating.Again);
+    expect(gradeFor("right", "sure", {})).toBe(Rating.Easy);
+  });
+});
+
+it("ratingToVerdict maps a self-rating to a verdict", () => {
+  expect(ratingToVerdict(Rating.Again)).toBe("wrong");
+  expect(ratingToVerdict(Rating.Hard)).toBe("partly");
+  expect(ratingToVerdict(Rating.Good)).toBe("right");
+  expect(ratingToVerdict(Rating.Easy)).toBe("right");
 });
 
 describe("review", () => {

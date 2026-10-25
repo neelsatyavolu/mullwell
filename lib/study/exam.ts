@@ -1,4 +1,5 @@
 import { recallAt, type StoredCard } from "./schedule";
+import { seededShuffle as shuffle } from "./shuffle";
 import type { Attempt, Item, Verdict } from "./types";
 
 // Test prep: what to review before a test date, how ready the student is, and
@@ -28,14 +29,17 @@ export function lastVerdicts(attempts: Attempt[]): Map<string, Verdict> {
 
 export type Readiness = { total: number; recalled: number; shaky: number; untried: number };
 
-/** Counts from the student's last try at each question; no invented scores. */
-export function readiness(items: ExamItem[], attempts: Attempt[]): Readiness {
-  const last = lastVerdicts(attempts);
+/**
+ * How the student would do on test day: a question counts as
+ * recalled when its card is likely still remembered at `testAt`, shaky when
+ * studied but likely forgotten, untried when never studied.
+ */
+export function readinessAt(items: ExamItem[], cards: Map<string, StoredCard>, testAt: number): Readiness {
   return items.reduce<Readiness>(
     (r, i) => {
-      const v = last.get(i.id);
-      if (!v) return { ...r, untried: r.untried + 1 };
-      return v === "right" ? { ...r, recalled: r.recalled + 1 } : { ...r, shaky: r.shaky + 1 };
+      const card = cards.get(i.id);
+      if (!card) return { ...r, untried: r.untried + 1 };
+      return recallAt(card, testAt) >= SAFE_RECALL ? { ...r, recalled: r.recalled + 1 } : { ...r, shaky: r.shaky + 1 };
     },
     { total: items.length, recalled: 0, shaky: 0, untried: 0 },
   );
@@ -58,16 +62,6 @@ export function perDay(planned: number, days: number): number {
   return Math.ceil(planned / Math.max(1, days));
 }
 
-/** Deterministic shuffle so a practice test is stable for one sitting. */
-function shuffle<T>(list: T[], seed: number): T[] {
-  let s = seed || 1;
-  const rand = () => ((s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296);
-  return list
-    .map((v) => ({ v, k: rand() }))
-    .sort((a, b) => a.k - b.k)
-    .map((x) => x.v);
-}
-
 /**
  * A practice test: about half the questions the student has missed or not
  * tried, the rest from what they know, interleaved across sets.
@@ -78,13 +72,16 @@ export function pickPracticeTest(items: ExamItem[], attempts: Attempt[], size: n
   const strong = shuffle(items.filter((i) => last.get(i.id) === "right"), seed + 1);
   const weakCount = Math.min(weak.length, Math.max(Math.ceil(size / 2), size - strong.length));
   const picked = [...weak.slice(0, weakCount), ...strong.slice(0, size - weakCount)];
-  // Interleave: never two from the same set in a row when it can be avoided.
-  const bySet = new Map<string, ExamItem[]>();
-  for (const i of shuffle(picked, seed + 2)) bySet.set(i.setId, [...(bySet.get(i.setId) ?? []), i]);
+  return interleaveBySet(shuffle(picked, seed + 2));
+}
+
+/** Never two from the same set in a row when it can be avoided: sets take turns, each keeping its order. */
+export function interleaveBySet<T extends { setId: string }>(items: T[]): T[] {
+  const bySet = new Map<string, T[]>();
+  for (const i of items) bySet.set(i.setId, [...(bySet.get(i.setId) ?? []), i]);
   const queues = [...bySet.values()];
-  const out: ExamItem[] = [];
-  while (queues.some((q) => q.length)) for (const q of queues) if (q.length) out.push(q.shift()!);
-  return out;
+  const longest = Math.max(0, ...queues.map((q) => q.length));
+  return Array.from({ length: longest }, (_, n) => queues.flatMap((q) => (n < q.length ? [q[n]] : []))).flat();
 }
 
 /** Concepts missed in a run, most frequent first. */

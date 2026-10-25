@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import type { SetStats } from "@/lib/client/derived";
 import { createCourse, useLibrary } from "@/lib/client/store";
 import { daysUntil } from "@/lib/study/exam";
 import { COURSE_HUES, type Course, type Exam, type StudySet } from "@/lib/study/types";
@@ -15,14 +16,26 @@ export function dayLabel(date: string): string {
   return `In ${d} days`;
 }
 
-export function SetRow({ set }: { set: StudySet }) {
-  const ready = set.items.filter((i) => i.status === "ok").length;
+export function SetRow({ set, stats }: { set: StudySet; stats: SetStats }) {
+  const pct = (n: number) => `${(n / Math.max(1, stats.ready)) * 100}%`;
   return (
-    <Link href={`/set/${set.id}`} className="card card-link stack" style={{ gap: 4, padding: 18 }}>
+    <Link href={`/set/${set.id}`} className="card card-link stack" style={{ gap: 6, padding: 18 }}>
       <span className="heading" style={{ fontSize: 16 }}>{set.title}</span>
-      <span className="small faint num">
-        {ready} {ready === 1 ? "question" : "questions"} · {set.origin === "web" ? "from the web" : "from your notes"}
-      </span>
+      {stats.ready > 0 && (
+        <span className="bar-split" style={{ height: 4 }} role="img" aria-label={`${stats.recalled} recalled, ${stats.shaky} at risk, ${stats.untried} not tried`}>
+          <span style={{ width: pct(stats.recalled), background: "var(--good)" }} />
+          <span style={{ width: pct(stats.shaky), background: "var(--warn)" }} />
+        </span>
+      )}
+      {stats.lesson ? (
+        <span className="meta num">Lesson: step {stats.lesson.step} of {stats.lesson.total}</span>
+      ) : stats.due > 0 ? (
+        <span><span className="chip chip-accent num">{stats.due} due</span></span>
+      ) : (
+        <span className="meta num">
+          {stats.ready} {stats.ready === 1 ? "question" : "questions"} · {set.origin === "web" ? "from the web" : "from your notes"}
+        </span>
+      )}
     </Link>
   );
 }
@@ -35,7 +48,7 @@ export function ExamRow({ exam, course }: { exam: Exam; course?: Course }) {
         <span className="dot" />
         <span className="stack" style={{ gap: 0 }}>
           <span style={{ fontWeight: 600 }}>{exam.name}</span>
-          {course && <span className="small faint">{course.name}</span>}
+          {course && <span className="meta">{course.name}</span>}
         </span>
       </span>
       <span className={`chip num${d >= 0 && d <= 3 ? " chip-accent" : ""}`}>{dayLabel(exam.date)}</span>
@@ -43,13 +56,16 @@ export function ExamRow({ exam, course }: { exam: Exam; course?: Course }) {
   );
 }
 
-export function CourseCard({ course, sets, exams }: { course: Course; sets: StudySet[]; exams: Exam[] }) {
+export function CourseCard({ course, sets, exams, due }: { course: Course; sets: StudySet[]; exams: Exam[]; due: number }) {
   const next = exams.filter((e) => daysUntil(e.date) >= 0).sort((a, b) => a.date.localeCompare(b.date))[0];
   return (
     <Link href={`/class/${course.id}`} className={`card card-link hue-rule stack hue-${course.hue}`} style={{ gap: 6 }}>
-      <span className="heading">{course.name}</span>
-      <span className="small faint num">{sets.length} {sets.length === 1 ? "set" : "sets"}</span>
-      {next ? <span className="small muted">{next.name}: {dayLabel(next.date).toLowerCase()}</span> : <span className="small faint">No tests scheduled</span>}
+      <span className="spread" style={{ alignItems: "flex-start" }}>
+        <span className="heading">{course.name}</span>
+        {due > 0 && <span className="chip chip-accent num">{due} due</span>}
+      </span>
+      <span className="meta num">{sets.length} {sets.length === 1 ? "set" : "sets"}</span>
+      {next ? <span className="small muted">{next.name}: {dayLabel(next.date).toLowerCase()}</span> : <span className="meta">No tests scheduled</span>}
     </Link>
   );
 }

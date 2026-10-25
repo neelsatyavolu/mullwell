@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Figtree, JetBrains_Mono, Literata } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import { DialogHost } from "@/components/Dialog";
 import { TopBar } from "@/components/TopBar";
 
 const ui = Figtree({ subsets: ["latin"], variable: "--font-ui", weight: ["400", "500", "600"] });
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <TopBar />
         {children}
+        <DialogHost />
       </body>
     </html>
   );

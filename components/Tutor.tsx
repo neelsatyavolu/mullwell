@@ -26,7 +26,10 @@ export function Tutor({ set, focus, onCite }: { set: StudySet; focus: Item | nul
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
-  useEffect(() => endRef.current?.scrollIntoView({ block: "end" }), [turns.length, streaming]);
+  // Block body: newer browsers return a Promise from scrollIntoView, which React would treat as the cleanup.
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [turns.length, streaming]);
 
   async function send() {
     const text = draft.trim();

@@ -6,14 +6,25 @@ import { createObjectParser } from "@/lib/study/ndjson";
 // hands text, status and sources to the caller as they arrive.
 
 export type Provider = "codex" | "grok";
-export type Prefs = { provider: Provider; model?: string };
+/** The study fields set how big today's session is (see lib/study/today.ts); unset means the default. */
+export type Prefs = { provider: Provider; model?: string; studyNewPerDay?: number; studyCap?: number };
+
+export const STUDY_DEFAULTS = { newPerDay: 10, cap: 30 };
+export const STUDY_MAX = 100;
 
 const PREFS_KEY = "mullwell.ai";
+
+/** A whole number from `min` to STUDY_MAX, or undefined. */
+export function studyLimit(value: unknown, min = 0): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(STUDY_MAX, Math.max(min, Math.round(value))) : undefined;
+}
 
 export function readPrefs(): Prefs {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "null");
-    if (raw && (raw.provider === "codex" || raw.provider === "grok")) return { provider: raw.provider, model: typeof raw.model === "string" ? raw.model : undefined };
+    if (raw && (raw.provider === "codex" || raw.provider === "grok")) {
+      return { provider: raw.provider, model: typeof raw.model === "string" ? raw.model : undefined, studyNewPerDay: studyLimit(raw.studyNewPerDay), studyCap: studyLimit(raw.studyCap, 1) };
+    }
   } catch {
     /* storage blocked or bad JSON */
   }
@@ -62,7 +73,7 @@ export async function runTask(task: string, input: unknown, handlers: RunHandler
     res = await fetch("/api/ai/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...prefs, task, input }),
+      body: JSON.stringify({ provider: prefs.provider, model: prefs.model, task, input }),
       signal: handlers.signal,
     });
   } catch (err) {

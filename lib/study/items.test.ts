@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDuplicate, passesCheck, toItem } from "./items";
+import { editAnswer, isDuplicate, passesCheck, suspend, toItem, unsuspend } from "./items";
 
 const sections = [{ id: 1, title: "Resp", text: "Glycolysis happens in the cytoplasm and splits glucose into two pyruvate molecules." }];
 const quote = "Glycolysis happens in the cytoplasm and splits glucose";
@@ -44,4 +44,27 @@ it("isDuplicate ignores case and punctuation", () => {
   const item = toItem({ kind: "short", prompt: "Where does glycolysis happen?", answer: "Cytoplasm", quote, section: 1 }, sections, "q")!;
   expect(isDuplicate("where does glycolysis happen", [item])).toBe(true);
   expect(isDuplicate("What does glycolysis make?", [item])).toBe(false);
+});
+
+describe("fixing a bad question", () => {
+  const short = { id: "q", kind: "short" as const, prompt: "What makes ATP?", answer: "ATP synthase", quote, section: 1, explain: "", concept: "", status: "ok" as const };
+
+  it("suspends with a report and unsuspends without one", () => {
+    const s = suspend(short, "unclear", 5);
+    expect(s).toMatchObject({ status: "suspended", report: { reason: "unclear", at: 5 } });
+    expect(short.status).toBe("ok");
+    const back = unsuspend(s);
+    expect(back.status).toBe("ok");
+    expect("report" in back).toBe(false);
+  });
+
+  it("edits a short or cloze answer and marks it edited, leaving the prompt and quote", () => {
+    expect(editAnswer(short, "  The ATP synthase enzyme ")).toEqual({ ...short, answer: "The ATP synthase enzyme", edited: true });
+  });
+
+  it("ignores blank edits and multiple choice", () => {
+    expect(editAnswer(short, "   ")).toBe(short);
+    const mcq = { ...short, kind: "mcq" as const, choices: ["a", "b", "c"], correct: 0, answer: "a" };
+    expect(editAnswer(mcq, "b")).toBe(mcq);
+  });
 });

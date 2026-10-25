@@ -1,10 +1,15 @@
 "use client";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CreateCard } from "@/components/CreateCard";
+import { confirmDialog } from "@/components/Dialog";
+import { InlineRename } from "@/components/InlineRename";
 import { ExamRow, SetRow } from "@/components/Library";
+import { WritingPlaceholder } from "@/components/Practice";
+import { setStats } from "@/lib/client/derived";
 import { deleteCourse, saveCourse, saveExam, useLibrary } from "@/lib/client/store";
+import { daysUntil } from "@/lib/study/exam";
 import { newId } from "@/lib/study/ids";
 import { COURSE_HUES } from "@/lib/study/types";
 
@@ -22,8 +27,10 @@ export default function ClassPage() {
   const [name, setName] = useState("");
   const [date, setDate] = useState(todayPlus(7));
   const [picked, setPicked] = useState<string[] | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const renameButton = useRef<HTMLButtonElement>(null);
 
-  if (!ready) return <main className="page" />;
+  if (!ready) return <main className="page"><WritingPlaceholder text="Opening…" /></main>;
   if (!course) {
     return (
       <main className="page page-narrow stack">
@@ -33,8 +40,23 @@ export default function ClassPage() {
     );
   }
   const sets = Object.values(library.sets).filter((s) => s.courseId === id).sort((a, b) => b.updatedAt - a.updatedAt);
-  const exams = Object.values(library.exams).filter((e) => e.courseId === id).sort((a, b) => a.date.localeCompare(b.date));
+  const exams = Object.values(library.exams).filter((e) => e.courseId === id);
+  // Upcoming tests nearest first, then past ones most recent first.
+  const upcoming = exams.filter((e) => daysUntil(e.date) >= 0).sort((a, b) => a.date.localeCompare(b.date));
+  const past = exams.filter((e) => daysUntil(e.date) < 0).sort((a, b) => b.date.localeCompare(a.date));
   const chosen = picked ?? sets.map((s) => s.id);
+
+  const remove = async () => {
+    const ok = await confirmDialog({
+      title: `Delete ${course.name}?`,
+      body: `${exams.length ? `Its ${exams.length} ${exams.length === 1 ? "test goes" : "tests go"} too. ` : ""}Its study sets stay, under Not in a class.`,
+      confirmLabel: "Delete class",
+      danger: true,
+    });
+    if (!ok) return;
+    deleteCourse(course.id);
+    router.push("/");
+  };
 
   function addExam(e: React.FormEvent) {
     e.preventDefault();
@@ -47,14 +69,18 @@ export default function ClassPage() {
   return (
     <main className="page stack" style={{ gap: 32 }}>
       <div className={`stack hue-${course.hue}`} style={{ gap: 10 }}>
-        <div className="row"><span className="dot" style={{ width: 12, height: 12 }} /><h1 className="title">{course.name}</h1></div>
+        {renaming ? (
+          <InlineRename value={course.name} label="Class name" onSave={(n) => saveCourse({ ...course, name: n })} onClose={() => setRenaming(false)} returnFocus={renameButton} />
+        ) : (
+          <div className="row"><span className="dot" style={{ width: 12, height: 12 }} /><h1 className="title">{course.name}</h1></div>
+        )}
         <div className="row small">
           {COURSE_HUES.map((h) => (
             <button key={h} type="button" className={`hue-${h}`} aria-label={`Color ${h}`} aria-pressed={course.hue === h} onClick={() => saveCourse({ ...course, hue: h })}
               style={{ width: 18, height: 18, borderRadius: 999, background: "var(--hue)", border: course.hue === h ? "2px solid var(--ink)" : "2px solid transparent", cursor: "pointer" }} />
           ))}
-          <button className="btn btn-sm btn-ghost" onClick={() => { const n = prompt("Rename class", course.name); if (n?.trim()) saveCourse({ ...course, name: n.trim().slice(0, 80) }); }}>Rename</button>
-          <button className="btn btn-sm btn-ghost btn-danger" onClick={() => confirm(`Delete ${course.name}? Its sets are kept, unfiled; its tests are deleted.`) && (deleteCourse(course.id), router.push("/"))}>Delete</button>
+          <button ref={renameButton} className="btn btn-sm btn-ghost" onClick={() => setRenaming(true)}>Rename</button>
+          <button className="btn btn-sm btn-ghost btn-danger" onClick={() => void remove()}>Delete</button>
         </div>
       </div>
 
@@ -86,12 +112,19 @@ export default function ClassPage() {
             </div>
           </form>
         )}
-        {exams.length ? <div className="stack" style={{ gap: 8 }}>{exams.map((e) => <ExamRow key={e.id} exam={e} />)}</div> : !adding && <p className="empty">Add a test and Mullwell plans your reviews up to the day.</p>}
+        {upcoming.length > 0 && <div className="stack" style={{ gap: 8 }}>{upcoming.map((e) => <ExamRow key={e.id} exam={e} />)}</div>}
+        {past.length > 0 && (
+          <div className="stack faint" style={{ gap: 8 }}>
+            <p className="label">Past</p>
+            {past.map((e) => <ExamRow key={e.id} exam={e} />)}
+          </div>
+        )}
+        {!exams.length && !adding && <p className="empty">Add a test and Mullwell plans your reviews up to the day.</p>}
       </section>
 
       <section className="stack">
         <p className="label">Study sets</p>
-        {sets.length ? <div className="grid">{sets.map((s) => <SetRow key={s.id} set={s} />)}</div> : <p className="empty">No material yet. Add your first lecture, chapter or study guide below.</p>}
+        {sets.length ? <div className="grid">{sets.map((s) => <SetRow key={s.id} set={s} stats={setStats(library, s.id)} />)}</div> : <p className="empty">No material yet. Add your first lecture, chapter or study guide below.</p>}
       </section>
 
       <CreateCard courseId={course.id} />

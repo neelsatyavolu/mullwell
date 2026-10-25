@@ -14,6 +14,7 @@ const PATHS = {
   flag: "M5 21V4M5 4h11l-2 4 2 4H5",
   arrowRight: "M5 12h14M13 6l6 6-6 6",
   arrowLeft: "M19 12H5M11 6l-6 6 6 6",
+  edit: "M14.5 4.5l5 5L9 20H4v-5L14.5 4.5ZM12.5 6.5l5 5",
   spark: "M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8",
 } as const;
 

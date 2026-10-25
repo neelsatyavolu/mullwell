@@ -5,8 +5,11 @@ export type Section = { id: number; title: string; text: string };
 
 export type ItemKind = "mcq" | "short" | "cloze";
 
-/** "checking" until the answer-key check runs; "dropped" items are never shown. */
-export type ItemStatus = "checking" | "ok" | "dropped";
+/** "checking" until the answer-key check runs; "dropped" items are never shown; "suspended" ones were reported by the student and sit out until restored. */
+export type ItemStatus = "checking" | "ok" | "dropped" | "suspended";
+
+/** Why the student reported a question. */
+export type ReportReason = "wrong-key" | "unclear" | "not-in-notes" | "duplicate";
 
 export type Item = {
   id: string;
@@ -26,6 +29,10 @@ export type Item = {
   status: ItemStatus;
   /** True when the answer check couldn't run (network or rate limit); shown to the student. */
   unchecked?: boolean;
+  /** Set while the item is suspended: what the student reported, and when. */
+  report?: { reason: ReportReason; at: number };
+  /** True once the student has rewritten the answer. */
+  edited?: true;
 };
 
 export type Verdict = "right" | "partly" | "wrong";
@@ -56,7 +63,17 @@ export type Exam = {
   createdAt: number;
 };
 
-/** One sitting of a practice test. */
+/** How one question went in a practice test. */
+export type RunResult = {
+  itemId: string;
+  setId: string;
+  verdict: Verdict;
+  /** What the student answered, at most 1000 characters. */
+  response?: string;
+  feedback?: string;
+};
+
+/** One sitting of a practice test. Fields after `missed` came later; older runs lack them. */
 export type ExamRun = {
   id: string;
   examId: string;
@@ -66,6 +83,10 @@ export type ExamRun = {
   partly: number;
   /** Concepts the student missed. */
   missed: string[];
+  /** Each graded question, in the order asked. */
+  results?: RunResult[];
+  /** How long the sitting took, rounded to whole minutes. */
+  minutes?: number;
 };
 
 /** How well the student knew a lesson step before it was taught, from the gauge question. */
@@ -123,10 +144,23 @@ export type StudySet = {
   podcast: { host: "A" | "B"; line: string }[] | null;
 };
 
+/** Where an answer was given. */
+export type AttemptMode = "practice" | "review" | "test" | "gauge" | "lesson" | "explain";
+
+/** Who judged the answer: the local checker, the model grader, or the student. */
+export type AttemptSource = "local" | "model" | "self";
+
+/** One answer to one question. Fields after `confidence` came later; older records lack them. */
 export type Attempt = {
   itemId: string;
   setId: string;
   at: number;
   verdict: Verdict;
   confidence: Confidence;
+  mode?: AttemptMode;
+  /** What the student answered, at most 1000 characters. */
+  response?: string;
+  feedback?: string;
+  missing?: string;
+  source?: AttemptSource;
 };
