@@ -1,5 +1,5 @@
 import { fail, handle, ok, readBody } from "@/lib/api";
-import { signIn } from "@/lib/account/accounts";
+import { passwordSignIn } from "@/lib/account/accounts";
 import { loginSchema } from "@/lib/account/input";
 import { getDb } from "@/lib/db/client";
 import { ipKey, startSession } from "@/lib/server/auth";
@@ -13,9 +13,9 @@ export function POST(req: Request) {
     if (!(await allow("login", ipKey(req)))) return fail("Too many attempts. Try again in 15 minutes.", 429);
     const body = await readBody(req, loginSchema);
     if (!body) return fail("Enter your email and password.", 400);
-    const userId = await signIn(await getDb(), body);
-    if (!userId) return fail("That email and password don't match an account.", 401);
-    await startSession(userId);
+    const signedIn = await passwordSignIn(await getDb(), body);
+    if (!signedIn) return fail("That email and password don't match an account.", 401);
+    await startSession(signedIn.userId, signedIn.version);
     return ok({ email: body.email });
   });
 }

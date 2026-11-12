@@ -11,7 +11,8 @@ export const loginSchema = z.object({ email, password: z.string().min(1).max(MAX
 export const forgotSchema = z.object({ email });
 // A real token is 43 characters; one of the wrong shape gets the same answer as any dead link.
 export const resetSchema = z.object({ token: z.string().max(100).catch(""), password: newPassword });
-export const deleteSchema = z.object({ password: z.string().min(1).max(MAX_PASSWORD_LENGTH) });
+// For an account with no password, "password" holds the email typed back, which can be up to 254 characters.
+export const deleteSchema = z.object({ password: z.string().min(1).max(254) });
 
 /** What asking for a reset link answers, whether or not the address has an account. */
 export const RESET_REQUESTED = "If an account exists for that address, a reset link is on its way.";

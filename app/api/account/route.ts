@@ -12,7 +12,14 @@ export const dynamic = "force-dynamic";
 export function GET(req: Request) {
   return withUser(req, async (userId) => {
     const user = await getUser(await getDb(), userId);
-    return user ? ok({ id: user.id, email: user.email, createdAt: user.createdAt }) : fail("Sign in first.", 401);
+    if (!user) return fail("Sign in first.", 401);
+    return ok({
+      id: user.id,
+      email: user.email,
+      createdAt: user.createdAt,
+      hasPassword: user.passwordHash !== null,
+      xanom: user.xanomSub ? { email: user.xanomEmail ?? user.email } : null,
+    });
   });
 }
 
@@ -27,14 +34,19 @@ export function POST(req: Request) {
   });
 }
 
-// DELETE /api/account: delete the account and everything in it, after checking the password.
+// DELETE /api/account: delete the account and everything in it, after checking the
+// password (or, for an account with none, its email typed back).
 export function DELETE(req: Request) {
   return withUser(req, async (userId) => {
     const body = await readBody(req, deleteSchema);
-    if (!body) return fail("Enter your password to delete your account.", 400);
+    if (!body) return fail("Confirm to delete your account.", 400);
     const db = await getDb();
     const user = await getUser(db, userId);
-    if (!user || !(await verifyPassword(body.password, user.passwordHash))) return fail("That password isn't right.", 401);
+    if (!user) return fail("Sign in first.", 401);
+    const confirmed = user.passwordHash
+      ? await verifyPassword(body.password, user.passwordHash)
+      : body.password.trim().toLowerCase() === user.email;
+    if (!confirmed) return fail(user.passwordHash ? "That password isn't right." : "Type your email exactly to confirm.", 401);
     await deleteUser(db, userId);
     await clearAllSessions();
     await endSession();

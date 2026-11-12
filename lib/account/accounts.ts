@@ -17,13 +17,21 @@ export async function register(q: Queryable, input: { email: string; password: s
 
 /** The account's id when the password is right. */
 export async function signIn(q: Queryable, input: { email: string; password: string }): Promise<string | null> {
+  return (await passwordSignIn(q, input))?.userId ?? null;
+}
+
+/**
+ * The account and the session version read along with the password hash. A session made at that
+ * version dies if the password is revoked (or reset) while the hash is being checked.
+ */
+export async function passwordSignIn(q: Queryable, input: { email: string; password: string }): Promise<{ userId: string; version: number } | null> {
   const user = await findUserByEmail(q, input.email);
-  if (!user) {
+  if (!user?.passwordHash) {
     // Spend the same time as a real check, so response time doesn't reveal who has an account.
     await verifyPassword(input.password, DUMMY_HASH);
     return null;
   }
-  return (await verifyPassword(input.password, user.passwordHash)) ? user.id : null;
+  return (await verifyPassword(input.password, user.passwordHash)) ? { userId: user.id, version: user.sessionVersion } : null;
 }
 
 const DUMMY_HASH = "scrypt$32768$8$3$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";

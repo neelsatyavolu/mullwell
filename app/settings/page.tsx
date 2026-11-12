@@ -1,6 +1,7 @@
 "use client";
 import { hardNavigate } from "@/lib/client/navigate";
-import { useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { XanomAccount, type AccountDetails } from "@/components/Xanom";
 import { readPrefs, STUDY_DEFAULTS, STUDY_MAX, studyLimit, usePrefs, writePrefs, type Prefs, type Provider } from "@/lib/client/ai";
 import { refreshStatus, useAiStatus } from "@/lib/client/status";
 import { confirmDialog } from "@/components/Dialog";
@@ -115,6 +116,17 @@ function AccountSection() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [details, setDetails] = useState<AccountDetails | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/account", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: AccountDetails | null) => { if (live && json) setDetails(json); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const hasPassword = details?.hasPassword ?? true;
 
   async function signOut() {
     setBusy(true);
@@ -155,10 +167,11 @@ function AccountSection() {
         <div className="spread">
           <div className="stack" style={{ gap: 2 }}>
             <span style={{ fontWeight: 600 }}>{account?.email ?? "…"}</span>
-            <span className="small faint">Forgot your password? Sign out and use “Forgot password?”.</span>
+            <span className="small faint">{hasPassword ? "Forgot your password? Sign out and use “Forgot password?”." : "No password set. To add one, sign out and use “Forgot password?”."}</span>
           </div>
           <button className="btn btn-sm" disabled={busy} onClick={() => void signOut()}>Sign out</button>
         </div>
+        <Suspense><XanomAccount details={details} /></Suspense>
         <p className="meta row" style={{ gap: 8 }}>
           <span className="dot" style={{ background: sync === "synced" ? "var(--good)" : "var(--warn)" }} aria-hidden />
           {SYNC_TEXT[sync]}
@@ -170,7 +183,9 @@ function AccountSection() {
         {deleting && (
           <form className="stack inset" onSubmit={deleteAccount}>
             <p className="small">This permanently deletes your account and everything in it: classes, sets, tests and review history. Download a backup first if you want to keep anything.</p>
-            <input className="input" type="password" autoComplete="current-password" placeholder="Your password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" />
+            {hasPassword
+              ? <input className="input" type="password" autoComplete="current-password" placeholder="Your password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" />
+              : <input className="input" type="email" autoComplete="off" placeholder="Type your email to confirm" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Your email" />}
             <div className="row">
               <button className="btn btn-sm btn-danger" disabled={!password || busy}>Delete forever</button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDeleting(false)}>Cancel</button>

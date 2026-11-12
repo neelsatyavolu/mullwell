@@ -19,6 +19,7 @@
     "@neelsatyavolu/shared-ai-auth": "github:neelsatyavolu/shared-ai-auth#7290ee3",
     "@vercel/functions": "^3.10.3",
     "idb-keyval": "^6.3.0",
+    "jose": "^6.2.17",
     "katex": "^0.19.1",
     "mermaid": "^12.2.0",
     "next": "16.4.2",

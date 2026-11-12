@@ -10,6 +10,10 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   APP_URL: z.url(),
   RESEND_API_KEY: z.string().min(1).optional(),
+  // Xanom sign-in. Without all three the "Continue with Xanom" flow answers "unavailable".
+  XANOM_ISSUER: z.url().optional(),
+  XANOM_CLIENT_ID: z.string().min(1).optional(),
+  XANOM_CLIENT_SECRET: z.string().min(16).optional(),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -24,6 +28,9 @@ export function env(): Env {
     DATABASE_URL: process.env.DATABASE_URL ?? (production ? undefined : "pglite://.data/mullwell"),
     APP_URL: process.env.APP_URL ?? (production ? undefined : "http://localhost:3000"),
     RESEND_API_KEY: process.env.RESEND_API_KEY || undefined,
+    XANOM_ISSUER: process.env.XANOM_ISSUER || undefined,
+    XANOM_CLIENT_ID: process.env.XANOM_CLIENT_ID || undefined,
+    XANOM_CLIENT_SECRET: process.env.XANOM_CLIENT_SECRET || undefined,
   });
   if (!parsed.success) throw new Error(`Server misconfigured: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
   cached = parsed.data;

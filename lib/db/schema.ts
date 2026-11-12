@@ -36,6 +36,13 @@ const STATEMENTS = [
     PRIMARY KEY (user_id, kind, id)
   )`,
   `CREATE INDEX IF NOT EXISTS records_user_seq ON records (user_id, seq)`,
+  // Xanom sign-in: accounts made through Xanom have no password; xanom_sub is the
+  // Xanom account's id. email_verified is true once the address is proven (a
+  // completed reset, or Xanom, which only vouches for verified addresses).
+  `ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS xanom_sub text UNIQUE`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS xanom_email text`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean NOT NULL DEFAULT false`,
 ];
 
 export async function migrate(db: Queryable): Promise<void> {

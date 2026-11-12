@@ -16,9 +16,9 @@ export async function currentUserId(): Promise<string | null> {
   return token ? accountIn(await getDb(), signingKey(), token, Date.now()) : null;
 }
 
-/** Signs this browser in at the account's current session version. */
-export async function startSession(userId: string): Promise<void> {
-  const version = await sessionVersionOf(await getDb(), userId);
+/** Signs this browser in at the account's current session version, or at `atVersion` when the caller read it earlier. */
+export async function startSession(userId: string, atVersion?: number): Promise<void> {
+  const version = atVersion ?? (await sessionVersionOf(await getDb(), userId));
   if (version === null) throw new Error("Cannot sign in to an account that does not exist");
   (await cookies()).set(SESSION_COOKIE, createSession(signingKey(), userId, Date.now(), version), {
     httpOnly: true,
