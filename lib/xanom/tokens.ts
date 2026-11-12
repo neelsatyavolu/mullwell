@@ -71,7 +71,7 @@ export function convertTicket(config: XanomConfig, input: { email: string; name:
 export async function verifySummaryToken(config: Pick<XanomConfig, "issuer" | "clientId">, authorization: string | null, keys: JWTVerifyGetKey): Promise<string> {
   const token = authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
   if (!token) throw new Error("No bearer token");
-  const { payload } = await jwtVerify(token, keys, { issuer: config.issuer, audience: config.clientId, algorithms: ["RS256"], requiredClaims: ["sub", "exp", "iat"] });
+  const { payload } = await jwtVerify(token, keys, { issuer: config.issuer, audience: config.clientId, algorithms: ["RS256"], requiredClaims: ["sub", "exp", "iat"], maxTokenAge: "70s" });
   if (payload.scope !== "summary" || typeof payload.sub !== "string") throw new Error("Not a summary token");
   return payload.sub;
 }

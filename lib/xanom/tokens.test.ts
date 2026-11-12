@@ -94,5 +94,7 @@ describe("summary token", () => {
     await expect(verifySummaryToken(config, `Bearer ${await sign(summary, { iat: now() - 120, exp: now() - 60 })}`, keys)).rejects.toThrow();
     await expect(verifySummaryToken(config, `Bearer ${await sign(summary, { key: otherKey })}`, keys)).rejects.toThrow();
     await expect(verifySummaryToken(config, `Bearer ${await sign({ sub: "xa_01", scope: "openid" })}`, keys)).rejects.toThrow();
+    // A token issued long ago but with a far-off exp is still refused (summary tokens live 60 s).
+    await expect(verifySummaryToken(config, `Bearer ${await sign(summary, { iat: now() - 600, exp: now() + 600 })}`, keys)).rejects.toThrow();
   });
 });
